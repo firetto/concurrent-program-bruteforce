@@ -3,6 +3,10 @@ import pprint
 can_commute = dict()
 visited = set()
 
+def clear_histories():
+    can_commute.clear()
+    visited.clear()
+
 class Event:
     def __init__(self, write: bool, variable: int, 
                  thread: int, selected:bool=False):
@@ -34,7 +38,7 @@ class Program:
             selected1: int, 
             selected2: int,
             skip_setup_blocks=False,
-            event_in_block=[]
+            event_in_block=[],
     ):
         self.events = tuple(events)
         self.selected1 = selected1
@@ -42,6 +46,8 @@ class Program:
         self.rf = []
         self.blocks = set()
         self.event_in_block = event_in_block.copy()
+        self.dependency_edges = set()
+        self.block_of_event = dict()
 
         self.setup_rf()
 
@@ -214,7 +220,7 @@ class Program:
                     new_selected1, 
                     new_selected2, 
                     skip_setup_blocks=True, 
-                    event_in_block=new_event_in_block.copy()
+                    event_in_block=new_event_in_block.copy(),
                 )
 
                 if new_p._check_commute_dfs(sequence):
@@ -363,7 +369,7 @@ class Program:
                 new_selected1, 
                 new_selected2,
                 skip_setup_blocks=True,
-                event_in_block=new_event_in_block.copy()
+                event_in_block=new_event_in_block.copy(),
             )
 
             # print(i, new_block_start_index, new_block_end_index, new_p)
@@ -379,6 +385,167 @@ class Program:
 
     def generate_dependency_edges(self):
 
+        # set up block of event
+        if len(self.block_of_event) == 0:
+            for block in self.blocks:
+                for i in block:
+                    self.block_of_event[i] = block
+
         # this will be a map of 2-tuples of indices of dependent events.
         edges = set()
+        
+        for i in range(len(self.events)):
+            e = self.events[i]
+            # assign edges for read-from order
+            if self.rf[i] != -1:
+                # self.rf[i] is going to be the index of the write corresponding
+                # to this read.
+                edges.add((self.rf[i], i))
+
+            
+            for j in range(i+1, len(self.events)):
+                f = self.events[j]
+
+                # assign edges based on program order, or conflict edges.
+                if ((e.thread == f.thread) \
+                    or (not e.write and f.write and e.variable == f.variable \
+                        and not self.event_in_block[i]) \
+                    or (f.write and e.variable == f.variable \
+                        and not self.event_in_block[j])
+                ):
+                    edges.add((i, j))
+
+        # now, iterate transitivity, saturation edges, and weird dependency
+        # until no more edges are added.
+
+        prev_edge_count = len(edges)
+        self._iterate_on_dependency_edges(edges)
+
+        while (len(edges) > prev_edge_count):
+
+            prev_edge_count = len(edges)
+            self._iterate_on_dependency_edges(edges)
+
+
+        self.dependency_edges = edges
+
+    def _iterate_on_dependency_edges(self, edges: set):
+        
+        # Saturation edges!
+        for i in range(len(self.events)):
+
+            e = self.events[i]
+
+            for j in range(i+1, len(self.events)):
+
+                # if we have added an edge between e and f
+                added_edge = (i, j) in edges
+
+                # if we already have added an edge, continue!
+                if added_edge:
+                    continue
+
+                f = self.events[j]
+
+                # if i is in a block,
+                # need either j to not be in self.block_of_event or not in
+                # the same block as i
+                # also need them to be the same variable.
+                if e.variable == f.variable and i in self.block_of_event and (
+                    j not in self.block_of_event or \
+                    self.block_of_event[i] != self.block_of_event[j]
+                ):
+                    
+                    # look at other events in the block that i is in.
+                    for k in self.block_of_event[i]:
+                        if i == k:
+                            continue
+                        if (k, j) in edges:
+                            edges.add((i, j))
+                            added_edge = True
+                            break
+
+                # if we already have added an edge, continue!
+                if added_edge:
+                    continue
+
+                # saturation but the other way now
+                # if j is in a block, need either i to not be in
+                # self.block_of-event, or not in the same block as j.
+                # also need them to be the same variable.
+                if e.variable == f.variable and j in self.block_of_event and (
+                    i not in self.block_of_event or \
+                    self.block_of_event[i] != self.block_of_event[j]
+                ):
+                    # look at other events in the block that j is in.
+                    for k in self.block_of_event[j]:
+                        if j == k:
+                            continue
+                        if (i, k) in edges:
+                            edges.add((i, j))
+                            added_edge = True
+                            break
+
+                # if we already have added an edge, continue!
+                if added_edge:
+                    continue
+
+                # now, weird dependency... this is crazy slow.
+                for block1 in self.blocks:
+                    for block2 in self.blocks:
+                        
+                        first1 = min(block1)
+                        first2 = min(block2)
+
+                        if i in block2 or j in block1 or \
+                            e.variable != self.events[first2].variable or \
+                            f.variable != self.events[first1].variable or \
+                            (first2, j) not in edges:
+                            continue
+                        
+                        
+                        # now, iterate through both of the blocks to find the
+                        # desired pair of elements
+
+                        for k in block1:
+
+                            g = self.events[k]
+                            if g.write or (i, k) not in edges:
+                                continue
+
+                            for l in block2:
+                                h = self.events[l]
+
+                                if h.write:
+                                    continue
+
+                                if (first1, l) in edges:
+                                    edges.add((i, j))
+                                    added_edge = True
+                                    break
+
+                            if added_edge:
+                                break
+                        
+                        if added_edge:
+                            break
+                    
+                    if added_edge:
+                        break
+
+                # done with weird dependency!
+
+                                
+        # for every pair of edges, see if there is a path. If so, add it!
+        # this is gonna be slow....
+        new_edges = set()
+        for edge1 in edges:
+            for edge2 in edges:
+                if edge1 == edge2:
+                    continue
+                
+                if edge1[1] == edge2[0]:
+                    new_edges.add((edge1[0], edge2[1]))
+
+        edges.update(new_edges)
 

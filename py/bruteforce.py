@@ -46,16 +46,18 @@ def generate_every_program(threads: int, variables: int, length: int):
 
     return lst
 
-# if __name__ == "__main__":
+if __name__ == "__main__":
 
-#     # threads = 3
-#     # variables = 2
-#     # length = 8
+    threads = 3
+    variables = 2
+    length = 8
 
-#     # # program = generate_random_program(threads, variables, length)
-#     # # for t in program:
-#     # #     print(t)
-#     # # print(str(program))
+    for i in range(500):
 
-#     # all_programs = generate_every_program(threads,variables,length)
-#     # # print(len(all_programs))
+        program = generate_random_program(threads, variables, length)
+        for t in program:
+            print(t)
+        print(str(program))
+
+    # all_programs = generate_every_program(threads,variables,length)
+    # # print(len(all_programs))
