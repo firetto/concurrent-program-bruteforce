@@ -551,4 +551,3 @@ class Program:
                     new_edges.add((edge1[0], edge2[1]))
 
         edges.update(new_edges)
-

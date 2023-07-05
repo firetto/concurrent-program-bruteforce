@@ -1,12 +1,15 @@
 import random
-import sys
 from defs import Event, Program, clear_histories
+from tqdm import tqdm
 
 # need to do this otherwise it will run into recursion errors even though it's completely fine!
-sys.setrecursionlimit(50000)    
+import resource, sys
+resource.setrlimit(resource.RLIMIT_STACK, (2**29,-1))
+sys.setrecursionlimit(10**7)  
 
 def generate_random_program(threads: int, variables: int, length: int):
     lst = []
+
     seen_a_write = [False for _ in range(variables)]
     for i in range(length):
         var = random.randrange(0, variables)
@@ -28,43 +31,59 @@ def generate_random_program(threads: int, variables: int, length: int):
     return result
 
 
-def generate_every_program(threads: int, variables: int, length: int):
-    lst = []
+# def generate_random_program_2vars_3threads(length: int):
+#     lst = []
 
-    for w in range(2): # write
-            for v in range(variables): # variables
-                for t in range(threads): # threads
-                    for s1 in range(length-1):
-                        for s2 in range(s1+1, length):    
-                            program = []
-                            for _ in range(length):
-                                program.append(Event(
-                                    write=bool(w),
-                                    variable=v,
-                                    thread=t,
-                                    selected=False
-                                ))
-                            program[s1].selected = True
-                            program[s2].selected = True
-                            try: 
-                                item = Program(program, s1, s2)
-                                lst.append(item)
-                            except:
-                                pass
+#     # assume that each program has both variables (otherwise it is trivial),
+#     # and that the first event is always w(0),0
 
-    return lst
+    
+
+#     for selected1 in range(length-1):
+#         first_event = Event(write=True, variable=0, thread=0, selected=(selected1 == 0))
+
+#         for selected2 in range(selected1+1, length):
+#             for first_1_pos in range(1, length - 1):
+#                 for i in range(length):
+                    
+
+
+
+# def generate_every_program(threads: int, variables: int, length: int):
+#     lst = []
+
+#     for w in range(2): # write
+#             for v in range(variables): # variables
+#                 for t in range(threads): # threads
+#                     for s1 in range(length-1):
+#                         for s2 in range(s1+1, length):    
+#                             program = []
+#                             for _ in range(length):
+#                                 program.append(Event(
+#                                     write=bool(w),
+#                                     variable=v,
+#                                     thread=t,
+#                                     selected=False
+#                                 ))
+#                             program[s1].selected = True
+#                             program[s2].selected = True
+#                             try: 
+#                                 item = Program(program, s1, s2)
+#                                 lst.append(item)
+#                             except:
+#                                 pass
+
+#     return lst
 
 if __name__ == "__main__":
 
     threads = 3
-    variables = 4
+    variables = 2
     # length = 6
 
-    count = 0
+    for _ in tqdm(range(10000000)):
 
-    for _ in range(5000):
-
-        length = random.randint(6, 11)
+        length = 8
 
         clear_histories()
 
@@ -79,14 +98,9 @@ if __name__ == "__main__":
 
         if can_commute == in_dependency_graph:
             print("--------------------------------------------------------")
-            print("FOUND!")
             print(program)
             print("CAN COMMUTE:", can_commute)
             print(program.dependency_edges)
-
-        count += 1
-
-    print(count)
 
     # for length in range(12, 13):
         
