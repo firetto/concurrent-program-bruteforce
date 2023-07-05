@@ -28,12 +28,26 @@ class Event:
 
 class Program:
 
-    def __init__(self, events: list, selected1: int, selected2: int):
+    def __init__(
+            self, 
+            events: list, 
+            selected1: int, 
+            selected2: int,
+            skip_setup_blocks=False,
+            event_in_block=[]
+    ):
         self.events = tuple(events)
         self.selected1 = selected1
         self.selected2 = selected2
-        self.rf = dict()
+        self.rf = []
         self.blocks = set()
+        self.event_in_block = event_in_block.copy()
+
+        self.setup_rf()
+
+        if not skip_setup_blocks:
+            
+            self.setup_blocks()
 
 
     def __str__(self) -> str:
@@ -64,7 +78,7 @@ class Program:
 
             if e.write:
                 last_write[e.variable] = i
-                self.rf[i] = -1 # rf should not be defined for writes!
+                self.rf.append(-1) # rf should not be defined for writes!
             
             else:
                 # we are assuming that there are no loose reads,
@@ -72,11 +86,65 @@ class Program:
                 if e.variable not in last_write:
                     raise Exception("Loose reads!")
                 
-                self.rf[i] = last_write[e.variable]
+                self.rf.append(last_write[e.variable])
 
 
     def setup_blocks(self):
-        pass
+
+        # maps variable to the corresponding set of blocks. If a block
+        # is in here, then if you see a read of teh same variable while
+        # the block is not ongoing, then you remove it. If you see a write of
+        # the same variable and there is a block in here, then add it to
+        # self.blocks.
+        candidate_block = dict()
+
+        # maps variable to whether or not the current block is ongoing 
+        # (i.e. the last few events have been a block)
+        block_ongoing = dict()
+
+        for i in range(len(self.events)):
+            e = self.events[i]
+
+            # if it is a write
+            if e.write:
+                if e.variable in candidate_block:
+                    self.blocks.add(frozenset(candidate_block[e.variable]))
+
+                candidate_block[e.variable] = {i}
+                block_ongoing[e.variable] = True
+
+            # if it is a read
+            else:
+                # if the block is ongoing, add to it.
+                if e.variable in candidate_block and block_ongoing[e.variable]:
+                    candidate_block[e.variable].add(i)
+
+                # if the block is no longer ongoing, then the candidate
+                # block is not really a block!
+                elif e.variable in candidate_block:
+                    candidate_block.pop(e.variable)
+                    block_ongoing.pop(e.variable)
+
+            for var in candidate_block:
+                if var != e.variable:
+                    block_ongoing[var] = False
+
+        # Add all the remaining candidate blocks
+        for var in candidate_block:
+            self.blocks.add(frozenset(candidate_block[var]))
+
+        # set up self.event_in_block
+        for i in range(len(self.events)):
+            e = self.events[i]
+
+            in_some_block = False
+
+            for block in self.blocks:
+                if i in block:
+                    in_some_block = True
+
+            self.event_in_block.append(in_some_block)
+
 
     def check_commute(self, print_sequence=False):
 
@@ -85,7 +153,7 @@ class Program:
         result = self._check_commute_dfs(sequence)
 
         if result and print_sequence:
-            pprint.pprint(sequence)
+            pprint.pprint([program for program in sequence])
 
         return result
     
@@ -122,6 +190,11 @@ class Program:
                 
                 new_events = self.events[:i] + (e2,) + (e1,) + self.events[i+2:]
 
+                new_event_in_block = self.event_in_block[:i] \
+                    + [self.event_in_block[i+1]] \
+                    + [self.event_in_block[i]] \
+                    + self.event_in_block[i+2:]
+
                 if self.selected1 == i:
                     new_selected1 = i+1
                 elif self.selected1 == i+1:
@@ -136,7 +209,13 @@ class Program:
                 else:
                     new_selected2 = self.selected2
 
-                new_p = Program(new_events, new_selected1, new_selected2)
+                new_p = Program(
+                    new_events, 
+                    new_selected1, 
+                    new_selected2, 
+                    skip_setup_blocks=True, 
+                    event_in_block=new_event_in_block.copy()
+                )
 
                 if new_p._check_commute_dfs(sequence):
                     can_commute[self] = True
@@ -150,7 +229,7 @@ class Program:
         for i in range(len(self.events)-1):
             e = self.events[i]
 
-            if not e.write:
+            if not e.write or not self.event_in_block[i]:
                 continue
 
             # e is a write, and i is the start index of the first block.
@@ -179,7 +258,7 @@ class Program:
                     # here, f is the start of a new block
                     # first, check if f is on a different thread than the entire
                     # block
-                    if f.thread in thread_set:
+                    if f.thread in thread_set or not self.event_in_block[j]:
                         cant_swap_below = True
                         break
                     else:
@@ -252,6 +331,11 @@ class Program:
                 + self.events[i:new_block_start_index] \
                 + self.events[new_block_end_index+1:]
             
+            new_event_in_block = self.event_in_block[:i] \
+                + self.event_in_block[new_block_start_index:new_block_end_index+1] \
+                + self.event_in_block[i:new_block_start_index] \
+                + self.event_in_block[new_block_end_index+1:]
+            
 
             # if selected1 is in the first block, 
             # move it to the same position but in the second.
@@ -274,7 +358,13 @@ class Program:
             else:
                 new_selected2 = self.selected2
 
-            new_p = Program(new_events, new_selected1, new_selected2)
+            new_p = Program(
+                new_events, 
+                new_selected1, 
+                new_selected2,
+                skip_setup_blocks=True,
+                event_in_block=new_event_in_block.copy()
+            )
 
             # print(i, new_block_start_index, new_block_end_index, new_p)
 
@@ -291,14 +381,4 @@ class Program:
 
         # this will be a map of 2-tuples of indices of dependent events.
         edges = set()
-        
 
-        # This will contain all of the blocks. To make it easier, we will assume
-        # that blocks will appear contiguously in the program. So, all the 
-        # blocks that appear in the string are exactly the ones we will care
-        # about. 
-        blocks = set()
-
-        
-
-         
