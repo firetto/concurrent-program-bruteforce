@@ -29,6 +29,9 @@ class Event:
         return hash((self.write, self.variable, self.thread, self.selected)) 
 
 
+class LooseReadException(Exception):
+    pass
+
 
 class Program:
 
@@ -90,7 +93,7 @@ class Program:
                 # we are assuming that there are no loose reads,
                 # but let's check nevertheless!
                 if e.variable not in last_write:
-                    raise Exception("Loose reads!")
+                    raise LooseReadException
                 
                 self.rf.append(last_write[e.variable])
 
@@ -293,9 +296,9 @@ class Program:
                 f = self.events[j]
 
                 if found_different_variable:
-                    if e.variable == f.variable \
-                        and not f.write:
-                        cant_swap_below = True
+                    if e.variable == f.variable:
+                        if not f.write:
+                            cant_swap_below = True
                         break
                 else:
             
@@ -330,7 +333,7 @@ class Program:
             #     can_commute[p] = True
             #     sequence.append(p)
             #     return True
-            
+
             # otherwise, just make the new program.
             new_events = self.events[:i] \
                 + self.events[new_block_start_index:new_block_end_index+1] \

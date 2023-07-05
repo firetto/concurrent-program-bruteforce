@@ -160,7 +160,37 @@ class TestProgramCommute(unittest.TestCase):
         program = Program(events, 1, 3)
         program.generate_dependency_edges()
         self.assertEqual(True, program.check_commute(), "FAIL!")
-        self.assertEqual(False, (1, 3) in program.dependency_edges, "FAIL!")
+        self.assertEqual(False, (1, 3) in program.dependency_edges, "FAIL!") 
+
+    def test_14(self):
+        clear_histories()
+        events = [
+            Event(write=True, variable=1, thread=2, selected=False),
+            Event(write=False, variable=1, thread=2, selected=True),
+            Event(write=True, variable=1, thread=1, selected=False),
+            Event(write=True, variable=0, thread=1, selected=True),
+            Event(write=True, variable=1, thread=1, selected=False),
+            Event(write=False, variable=1, thread=1, selected=False),
+        ]
+        program = Program(events, 1, 3)
+        program.generate_dependency_edges()
+        self.assertEqual(True, program.check_commute(), "FAIL!")
+        self.assertEqual(False, (1, 3) in program.dependency_edges, "FAIL!") 
+
+    def test_15(self):
+        clear_histories()
+        events = [
+            Event(write=True, variable=1, thread=0, selected=False),
+            Event(write=True, variable=1, thread=2, selected=True),
+            Event(write=True, variable=0, thread=0, selected=False),
+            Event(write=True, variable=1, thread=0, selected=True),
+            Event(write=False, variable=1, thread=0, selected=False),
+            Event(write=True, variable=0, thread=2, selected=False),
+        ]
+        program = Program(events, 1, 3)
+        program.generate_dependency_edges()
+        self.assertEqual(True, program.check_commute(), "FAIL!")
+        self.assertEqual(False, (1, 3) in program.dependency_edges, "FAIL!") 
 
 if __name__ == "__main__":
 
